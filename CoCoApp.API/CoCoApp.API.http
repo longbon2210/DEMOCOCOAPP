@@ -1,0 +1,8 @@
+@HostAddress = http://localhost:5146
+
+### LẤY DANH SÁCH MATCH CỦA USER 2
+# (Dán Token của User 2 vào đây)
+@TokenUser2 = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1laWQiOiIyIiwibmJmIjoxNzg3MjUxMzg4LCJleHAiOjE3ODczMzc3ODgsImlhdCI6MTc4NzI1MTM4OH0.hwghBVkid0Co6V8NL3rubCYyYJ3pAHla1Fmo9i3xJww
+
+GET {{HostAddress}}/api/match/my-matches
+Authorization: Bearer {{TokenUser2}}
