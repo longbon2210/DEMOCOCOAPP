@@ -98,7 +98,7 @@ namespace CocoApp.API.Controllers
 			// 1. Tìm danh sách ID của những người mà bạn ĐÃ TỪNG QUẸT (dù trái hay phải)
 			var swipedUserIds = _context.Swipes
 				.Where(s => s.SwiperId == currentUserId)
-				.Select(s => s.SwipedId)
+				.Select(s => s.SwipedUserId)
 				.ToList();
 
 			// 2. Lấy danh sách người dùng TỪ CHỐI hiển thị bản thân và những người đã quẹt

@@ -1,47 +1,111 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
+using CocoApp.API.Data;
+using CocoApp.API.Models;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
-namespace CocoAppAPI.Controllers
+namespace CocoApp.API.Controllers
 {
-	// Lớp dùng để hứng dữ liệu JSON từ Flutter gửi lên
-	public class SwipeRequestDto
+	public class SwipeInputDto
 	{
-		public int TargetUserId { get; set; }
+		public int? SwiperId { get; set; }
+		public int? SwipedUserId { get; set; }
+		public int? SwipedId { get; set; }
+		public int? TargetUserId { get; set; }
 		public bool IsLike { get; set; }
+
+		public int GetTargetId()
+		{
+			if (SwipedUserId.HasValue) return SwipedUserId.Value;
+			if (SwipedId.HasValue) return SwipedId.Value;
+			if (TargetUserId.HasValue) return TargetUserId.Value;
+			return 0;
+		}
 	}
 
 	[Route("api/[controller]")]
+	[Route("api/swipes")]
 	[ApiController]
-	[Authorize]
 	public class SwipeController : ControllerBase
 	{
-		// POST: api/swipe
+		private readonly AppDbContext _context;
+
+		public SwipeController(AppDbContext context)
+		{
+			_context = context;
+		}
+
+		// POST: api/swipe hoặc api/swipes
 		[HttpPost]
-		public IActionResult Swipe([FromBody] SwipeRequestDto request)
+		public IActionResult Swipe([FromBody] SwipeInputDto request)
 		{
 			if (request == null)
+				return BadRequest(new { error = "Dữ liệu không hợp lệ" });
+
+			int targetId = request.GetTargetId();
+			if (targetId <= 0)
+				return BadRequest(new { error = "Thiếu ID người được chọn" });
+
+			// Lấy swiperId từ JWT Token nếu có, hoặc từ request, hoặc mặc định
+			int swiperId = 4; // Mặc định tài khoản thử nghiệm
+			var claimId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!string.IsNullOrEmpty(claimId) && int.TryParse(claimId, out int parsedId))
 			{
-				return BadRequest("Dữ liệu không hợp lệ.");
+				swiperId = parsedId;
+			}
+			else if (request.SwiperId.HasValue && request.SwiperId.Value > 0)
+			{
+				swiperId = request.SwiperId.Value;
 			}
 
-			// TODO: Lấy ID của người dùng đang đăng nhập từ Token (thông qua Claim)
-			// Lệnh lấy ID: var currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (swiperId == targetId)
+				return BadRequest(new { error = "Không thể tự quẹt chính mình" });
+
+			// Kiểm tra quẹt trước đó
+			var existingSwipe = _context.Swipes.FirstOrDefault(s => s.SwiperId == swiperId && s.SwipedUserId == targetId);
+			if (existingSwipe != null)
+			{
+				existingSwipe.IsLike = request.IsLike;
+				existingSwipe.CreatedAt = DateTime.UtcNow;
+				_context.SaveChanges();
+				return Ok(new { message = "Cập nhật lượt quẹt thành công!", isMatch = existingSwipe.IsMatch });
+			}
+
+			var swipe = new Swipe
+			{
+				SwiperId = swiperId,
+				SwipedUserId = targetId,
+				IsLike = request.IsLike,
+				CreatedAt = DateTime.UtcNow
+			};
+
+			bool isMatch = false;
+			string message = request.IsLike ? "Đã thích hồ sơ!" : "Đã bỏ qua hồ sơ.";
 
 			if (request.IsLike)
 			{
-				// Hành động Thả tim (Quẹt phải)
-				// TODO: Lưu vào bảng Likes (Database) bằng Entity Framework
+				// Kiểm tra tương hợp hai chiều
+				var targetLikedMe = _context.Swipes.FirstOrDefault(s => s.SwiperId == targetId && s.SwipedUserId == swiperId && s.IsLike);
+				if (targetLikedMe != null)
+				{
+					isMatch = true;
+					swipe.IsMatch = true;
+					targetLikedMe.IsMatch = true;
+					message = "Chúc mừng! Hai bạn đã tương hợp (Match)!";
 
-				// Trả về báo thành công
-				return Ok(new { message = "Đã lưu lượt Thích thành công!" });
+					// Thêm vào bảng Matches
+					_context.Matches.Add(new Match
+					{
+						User1Id = Math.Min(swiperId, targetId),
+						User2Id = Math.Max(swiperId, targetId),
+						MatchedAt = DateTime.UtcNow
+					});
+				}
 			}
-			else
-			{
-				// Hành động Bỏ qua (Quẹt trái)
-				// TODO: Lưu vào bảng Passes (Database)
 
-				return Ok(new { message = "Đã bỏ qua người dùng." });
-			}
+			_context.Swipes.Add(swipe);
+			_context.SaveChanges();
+
+			return Ok(new { message, isMatch });
 		}
 	}
 }

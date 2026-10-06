@@ -33,7 +33,7 @@ namespace CocoApp.API.Controllers
 			if (targetUser == null)
 				return NotFound("Không tìm thấy hồ sơ của người này!");
 
-			var existingSwipe = _context.Swipes.FirstOrDefault(s => s.SwiperId == swiperId && s.SwipedId == request.SwipedId);
+			var existingSwipe = _context.Swipes.FirstOrDefault(s => s.SwiperId == swiperId && s.SwipedUserId == request.SwipedId);
 			if (existingSwipe != null)
 				return BadRequest("Bạn đã thao tác với hồ sơ này rồi!");
 
@@ -41,7 +41,7 @@ namespace CocoApp.API.Controllers
 			var swipe = new Swipe
 			{
 				SwiperId = swiperId,
-				SwipedId = request.SwipedId,
+				SwipedUserId = request.SwipedId,
 				IsLike = request.IsLike
 			};
 
@@ -53,7 +53,7 @@ namespace CocoApp.API.Controllers
 				message = "Đã thả tim hồ sơ! Chờ người ấy phản hồi nhé.";
 
 				// KIỂM TRA TƯƠNG HỢP: Tìm xem người kia có từng "Thích" mình không?
-				var targetLike = _context.Swipes.FirstOrDefault(s => s.SwiperId == request.SwipedId && s.SwipedId == swiperId && s.IsLike);
+				var targetLike = _context.Swipes.FirstOrDefault(s => s.SwiperId == request.SwipedId && s.SwipedUserId == swiperId && s.IsLike);
 
 				if (targetLike != null)
 				{
@@ -82,7 +82,7 @@ namespace CocoApp.API.Controllers
 			// 1. Tìm ID của những người đã Match với bạn
 			var matchedUserIds = _context.Swipes
 				.Where(s => s.SwiperId == currentUserId && s.IsMatch == true)
-				.Select(s => s.SwipedId)
+				.Select(s => s.SwipedUserId)
 				.ToList();
 
 			// 2. Lấy thông tin cơ bản của họ để hiển thị lên danh sách chat

@@ -3,44 +3,85 @@ using CocoApp.API.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
-builder.Services.AddSignalR();
-
-// 1. NÂNG CẤP SWAGGER: Thêm nút "Authorize" (ổ khóa) để nhập Token
-builder.Services.AddSwaggerGen();
+// 1. CẤU HÌNH DATABASE: Tự động hỗ trợ cả SQL Server (Somee) hoặc SQLite cục bộ
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+bool isSqlServer = !string.IsNullOrWhiteSpace(connectionString) && 
+                   !connectionString.Contains(".db") && 
+                   !connectionString.Contains("[YOUR_PASSWORD]");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-	options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+	if (isSqlServer)
+	{
+		options.UseSqlServer(connectionString);
+	}
+	else
+	{
+		// Cục bộ: Tự động tạo file SQLite cocoapp.db để ứng dụng hoạt động ngay 100% không phụ thuộc internet
+		options.UseSqlite("Data Source=cocoapp.db");
+	}
+});
 
-// 2. CẤU HÌNH BẢO VỆ (JWT AUTHENTICATION)
-var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!);
+// 2. CẤU HÌNH CORS CHO PHÉP FLUTTER WEB & MOBILE KẾT NỐI
+builder.Services.AddCors(options =>
+{
+	options.AddPolicy("AllowAll", policy =>
+	{
+		policy.AllowAnyOrigin()
+			  .AllowAnyHeader()
+			  .AllowAnyMethod();
+	});
+});
+
+// 3. CẤU HÌNH JWT AUTHENTICATION
+var jwtSecret = builder.Configuration["Jwt:Key"] ?? "MotChuoiKyTuBiMatRatDaiVaKhoDoanChoDuAnCocoApp123!@#";
+var key = Encoding.UTF8.GetBytes(jwtSecret);
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 	.AddJwtBearer(options =>
 	{
 		options.TokenValidationParameters = new TokenValidationParameters
 		{
-			ValidateIssuer = false, // Tạm tắt kiểm tra người phát hành
-			ValidateAudience = false, // Tạm tắt kiểm tra người nhận
-			ValidateLifetime = true, // CÓ kiểm tra thẻ hết hạn chưa
-			ValidateIssuerSigningKey = true, // CÓ kiểm tra chữ ký bí mật
+			ValidateIssuer = false,
+			ValidateAudience = false,
+			ValidateLifetime = true,
+			ValidateIssuerSigningKey = true,
 			IssuerSigningKey = new SymmetricSecurityKey(key)
 		};
 	});
 
+builder.Services.AddControllers();
+builder.Services.AddSignalR();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
 var app = builder.Build();
+
+// 4. TỰ ĐỘNG KHỞI TẠO BẢNG & SEED DỮ LIỆU BAN ĐẦU
+using (var scope = app.Services.CreateScope())
+{
+	var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+	try
+	{
+		db.Database.EnsureCreated();
+		DataSeeder.Seed(db);
+	}
+	catch (Exception ex)
+	{
+		Console.WriteLine($"[Cảnh báo khởi tạo DB]: {ex.Message}");
+	}
+}
 
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// app.UseHttpsRedirection(); // Vẫn đang tạm tắt để tránh lỗi kết nối
+app.UseCors("AllowAll");
 
-// 3. BẬT CHẾ ĐỘ KIỂM TRA BẢO MẬT (Thứ tự 2 dòng này rất quan trọng, phải nằm trước MapControllers)
-app.UseAuthentication(); // Xác định "Bạn là ai?" (Kiểm tra thẻ)
-app.UseAuthorization();  // Xác định "Bạn được làm gì?" (Quyền hạn)
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<CocoApp.API.Hubs.ChatHub>("/chatHub");
